@@ -1,4 +1,5 @@
 ;; auto-complete-distel.el
+;; From github: rost/auto-complete-distel
 ;;
 ;; Most of the code here is ripped from distel and erlang-mode.
 ;;
@@ -16,6 +17,11 @@
 ;;
 ;; TODO:
 ;; Add documentation support
+;;
+;; It seems you can't get any completion if no first letter is given.
+;; Let's check the added functionality in the field before trying to fix that.
+;; bpuzon@github
+
 
 (require 'auto-complete)
 
@@ -52,14 +58,19 @@
             (let ((mod (intern (match-string 1 str)))
                   (pref (match-string 2 str))
                   (beg (+ beg (match-beginning 2))))
+              (setq ac-distel-candidates-cache 'awaiting_response)
               (erl-spawn
                (erl-send-rpc node 'distel 'functions (list mod pref))
                (&ac-distel-receive-completions "function" beg end pref buf
-                                               continuing)))
+                                               continuing))
+              (wait-for-completions 50))
           ;; completing just a module
+          (setq ac-distel-candidates-cache 'awaiting_response)
           (erl-spawn
            (erl-send-rpc node 'distel 'modules (list str))
-           (&ac-distel-receive-completions "module" beg end str buf continuing)))))))
+           (&ac-distel-receive-completions "module" beg end str buf continuing))
+          (wait-for-completions 50)
+          )))))
 
 (defun &ac-distel-receive-completions (what beg end prefix buf continuing)
   (let ((state (erl-async-state buf)))
@@ -70,5 +81,16 @@
           (message "Error: %s" reason))
          (other
           (message "Unexpected reply: %S" other))))))
+
+(defun wait-for-completions (times)
+       "Wait times*10ms for the answer from the node."
+       (let ((left times))
+         (while (and (eq ac-distel-candidates-cache 'awaiting_response) (> left 0))
+           (sit-for 0 10)
+           (setq left (- left 1))
+           )
+         (if (eq ac-distel-candidates-cache 'awaiting_response)
+             (setq completions nil)
+           )))
 
 (provide 'auto-complete-distel)
